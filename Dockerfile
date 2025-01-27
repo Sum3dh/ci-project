@@ -4,7 +4,7 @@ WORKDIR /app
 COPY pom.xml .
 RUN mvn dependency:go-offline
 COPY src/ .
-RUN mvn [ackage -DskipTests
+RUN mvn package -DskipTests
 
 # Stage 2: Run the Java Application
 FROM eclipse-temurin:17-jdk
