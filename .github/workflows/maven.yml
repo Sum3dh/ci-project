@@ -7,40 +7,137 @@
 # documentation.
 
 name: Java CI with Maven
-
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  workflow_call:
+    inputs:
+      branch:
+        description: 'Branch to trigger the build'
+        required: false
+        default: 'main'
+        type: string
+      docker_image_name:
+        description: 'Docker image name'
+        required: false
+        type: string
+      mvn_file:
+        description: 'Maven file'
+        required: false
+        default: 'pom.xml'
+        type: string
+      mvn_options:
+        description: 'Additional Maven options'
+        required: false
+        default: '-B'
+        type: string
+      mvn_actions:
+        description: 'Additional Maven actions'
+        required: false
+        default: 'package'
+        type: string
+      jdk_version:
+        description: 'JDK version to use'
+        required: false
+        default: '17'
+        type: string
+      jdk_distribution:
+        description: 'JDK distribution to use'
+        required: false
+        default: 'temurin'
+        type: string
+      node_type:
+        description: 'Select node'
+        required: false
+        type: string
+        default: 'on-demand'
+    secrets:
+      VAULT_ROLE_ID:
+        required: true
+      VAULT_SECRET_ID:
+        required: true
+        
+  workflow_dispatch:
+    inputs:
+      retry_count:
+        description: "Retry count for the workflow"
+        required: false
+        default: "0"
+        type: string
 
 jobs:
   build:
-
-    runs-on: ubuntu-latest
-
+    runs-on: spot-runner
+    strategy:
+      fail-fast: false
+      max-parallel: 2
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: maven
-    - name: Build with Maven
-      run: mvn -B package --file pom.xml
-    - name: Log in to Docker hub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ inputs.branch }}
 
-    - name: Build Docker image
-      run: |
-         docker build -t ${{ secrets.DOCKER_USERNAME }}/java-maven-ci-project:latest .
-    - name: Push Docker Image to docker Hub
-      run: |
-         docker push ${{ secrets.DOCKER_USERNAME }}/java-maven-ci-project-app:latest 
+      - name: Set Retry Count
+        run: echo "RETRY_COUNT=${{ inputs.retry_count }}" >> $GITHUB_ENV
+
+      - name: Fetch Secret from Vault
+        id: import-secrets
+        uses: hashicorp/vault-action@v3
+        with:
+          url: "https://vault.distrib.startreedata.io/"
+          method: approle
+          roleId: ${{ secrets.VAULT_ROLE_ID }}
+          secretId: ${{ secrets.VAULT_SECRET_ID }}
+          secrets:  |
+            startree-ci-gha/data/gha-ci-secrets AWS_ACCESS_KEY_ID ;
+            startree-ci-gha/data/gha-ci-secrets AWS_SECRET_ACCESS_KEY 
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ inputs.jdk_version }}
+          distribution: ${{ inputs.jdk_distribution }}
+          cache: maven
+          
+      - name: Set up Maven
+        uses: s4u/setup-maven-action@v1.13.0
+        with:
+          maven-version: '3.9.6'
+        
+      - name: Build with Maven
+        run: mvn ${{ inputs.mvn_options }} ${{inputs.mvn_actions}} --file ${{ inputs.mvn_file }}
+
+      - name: Build Docker Image
+        run: |
+          docker build -t my-docker-repo/my-java-app:latest ./java-app 
+
+  # retry-entire-workflow:
+  #   if: failure() && env.RETRY_COUNT < 3  # Retry if failure and count < 3
+  #   needs: [build]
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Increase Retry Count
+  #       run: echo "NEXT_RETRY=$((RETRY_COUNT + 1))" >> $GITHUB_ENV
+
+  #     - name: Retry Entire Workflow
+  #       uses: benc-uk/workflow-dispatch@v1
+  #       with:
+  #         workflow: "main.yml"
+  #         token: ${{ secrets.GITHUB_TOKEN }}
+  #         inputs: '{ "retry_count": "${{ env.NEXT_RETRY }}" }'
+
+
+  # retry-entire-workflow:
+  #     if: failure() && inputs.retry_count < 3  # Use inputs.retry_count instead of env.RETRY_COUNT
+  #     needs: [build]
+  #     runs-on: ubuntu-latest
+  #     steps:
+  #     - name: Increase Retry Count
+  #       run: echo "NEXT_RETRY=$(( ${{ inputs.retry_count }} + 1 ))" >> $GITHUB_ENV
+
+  #     - name: Retry Entire Workflow
+  #       uses: benc-uk/workflow-dispatch@v1
+  #       with:
+  #         workflow: "main.yml"
+  #         token: ${{ secrets.GITHUB_TOKEN }}
+  #         inputs: '{ "retry_count": "${{ env.NEXT_RETRY }}" }'
 
 
     
