@@ -38,7 +38,7 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
     - name: sleep
-      run: sleep 30s
+      run: sleep 20s
 
     - name: Build Docker image
       run: |
