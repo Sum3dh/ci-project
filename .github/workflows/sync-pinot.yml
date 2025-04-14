@@ -12,7 +12,7 @@ jobs:
       - name: Checkout pinot repo
         uses: actions/checkout@v3
         with:
-          repository: sum3dh/pinot-clone
+          repository: sum3dh/pinot
           token: ${{ secrets.GH_PAT }}
           ref: main
 
