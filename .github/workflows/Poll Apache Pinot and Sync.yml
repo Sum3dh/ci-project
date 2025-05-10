@@ -1,0 +1,60 @@
+name: Poll Apache Pinot and Sync
+
+on:
+  schedule:
+    - cron: '*/5 * * * *' # every 5 minutes
+  workflow_dispatch:
+
+jobs:
+  check-and-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pinot repo
+        uses: actions/checkout@v3
+        with:
+          repository: sum3dh/pinot-clone
+          token: ${{ secrets.GH_PAT }}
+          ref: main
+
+      - name: Get latest commit from apache-pinot
+        run: |
+          git clone --quiet --depth=1 https://github.com/apache/pinot.git apache-pinot
+          cd apache-pinot
+          echo "Latest commit in apache-pinot is:"
+          git rev-parse HEAD | tee ../apache_commit
+          cd ..
+          
+      - name: Compare and Sync if needed
+        run: |
+          git clone --quiet --depth=1 https://github.com/sum3dh/pinot.git pinot-clone
+          cd pinot-clone
+          git rev-parse HEAD > ../pinot_commit
+          cd ..
+
+          APACHE_COMMIT=$(cat apache_commit)
+          PINOT_COMMIT=$(cat pinot_commit)
+
+          echo "Apache Commit: $APACHE_COMMIT"
+          echo "Pinot Commit: $PINOT_COMMIT"
+
+          if [ "$APACHE_COMMIT" != "$PINOT_COMMIT" ]; then
+            echo "Commits differ. Syncing..."
+            cd apache-pinot
+            if ! git remote | grep -q pinot; then
+              git remote add pinot https://x-access-token:${{ secrets.GH_PAT }}@github.com/sum3dh/pinot-clone.git
+            fi
+
+            git push pinot HEAD:main --force
+            echo "Sync done. Proceeding to build."
+          else
+            echo "No new commits in apache-pinot. Exiting."
+            exit 0
+          fi
+
+      # - name: Build and push artifacts
+      #   if: success()
+      #   run: |
+      #     # Add build steps here, for example:
+      #     cd apache-pinot
+      #     ./gradlew clean build -x test
+      #     # Add JFrog upload commands here
